@@ -1,34 +1,53 @@
-name: Python Package using Conda
+name: Android APK build
 
-on: [push]
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
 
 jobs:
-  build-linux:
+  build-apk:
     runs-on: ubuntu-latest
-    strategy:
-      max-parallel: 5
+    timeout-minutes: 180
 
     steps:
-    - uses: actions/checkout@v4
-    - name: Set up Python 3.10
-      uses: actions/setup-python@v3
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Setup Java 17
+      uses: actions/setup-java@v4
       with:
-        python-version: '3.10'
-    - name: Add conda to system path
-      run: |
-        # $CONDA is an environment variable pointing to the root of the miniconda directory
-        echo $CONDA/bin >> $GITHUB_PATH
+        distribution: temurin
+        java-version: '17'
+
     - name: Install dependencies
       run: |
-        conda env update --file environment.yml --name base
-    - name: Lint with flake8
+        sudo apt-get update
+        sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
+          python3-pip python3-setuptools python3-venv git zip unzip \
+          build-essential ccache libffi-dev libssl-dev \
+          libsqlite3-dev zlib1g-dev libjpeg-dev libpng-dev openjdk-17-jdk
+
+    - name: Install Buildozer & Cython
       run: |
-        conda install flake8
-        # stop the build if there are Python syntax errors or undefined names
-        flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
-        # exit-zero treats all errors as warnings. The GitHub editor is 127 chars wide
-        flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
-    - name: Test with pytest
+        python3 -m pip install --user --upgrade pip
+        python3 -m pip install --user buildozer
+        python3 -m pip install --user Cython==0.29.36
+        echo "::add-path::${HOME}/.local/bin"
+      env:
+        PATH: ${{ runner.env.PATH }}:${{ env.HOME }}/.local/bin
+
+    - name: Build APK
+      env:
+        HOME: ${{ env.HOME }}
+        PATH: ${{ env.HOME }}/.local/bin:${{ env.PATH }}
       run: |
-        conda install pytest
-        pytest
+        rm -rf ./.buildozer bin || true
+        $HOME/.local/bin/buildozer -v android debug
+
+    - name: Upload APK
+      uses: actions/upload-artifact@v4
+      with:
+        name: nvweb-apk
+        path: bin/*.apk
+
